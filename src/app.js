@@ -52,9 +52,46 @@ app.post("/sign-up", async (req, res) => {
 });
 
 app.post("/sign-in", async (req, res) => {
-	const token = uuid();
+	const user = req.body;
 
-	return res.send(token);
+	const schema = Joi.object({
+		email: Joi.string().email().required(),
+		password: Joi.string().min(8).required(),
+	});
+
+	const validation = schema.validate(user, { abortEarly: false });
+
+	if (validation.error) {
+		const errors = validation.error.details.map(
+			(details) => details.message
+		);
+		return res.status(422).send(errors);
+	}
+
+	const foundUser = await usersCollection.findOne({ email: user.email });
+
+	if (!foundUser) return res.status(401).send("E-mail is not registered yet");
+
+	try {
+		const passwordIsCorrect = bcrypt.compareSync(
+			user.password,
+			foundUser.password
+		);
+
+		if (!passwordIsCorrect) return res.status(401).send("wrong passsword");
+
+		const token = uuid();
+
+		await sessionsCollection.insertOne({
+			token,
+			userId: foundUser._id,
+		});
+
+		return res.status(202).send({ header: { token } });
+	} catch (error) {
+		console.log(error);
+		return res.sendStatus(500);
+	}
 });
 
 const PORT = process.env.PORT || 5151;
